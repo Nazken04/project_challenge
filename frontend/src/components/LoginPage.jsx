@@ -1,32 +1,35 @@
 import React, { useState } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";  // Import the useNavigate hook
 
-const LoginPage = ({ onLogin }) => {
+const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const navigate = useNavigate();  // Initialize useNavigate
 
   const handleLogin = async (e) => {
     e.preventDefault();
-
+  
     try {
-      const response = await axios.post(
-        "http://localhost:3350/api/auth/login",
-        {
-          email,
-          password,
-        }
-      );
-
-      // Assuming the response includes a token
+      const response = await axios.post("http://localhost:3350/api/auth/login", {
+        email,
+        password,
+      });
+  
+      // Log the response to see the token
+      console.log("Login Response:", response.data);
+  
+      // Check if the token is received from the backend
       if (response.data.token) {
-        localStorage.setItem("token", response.data.token);
-        onLogin(); // Inform App.js that login is successful
+        localStorage.setItem("authToken", response.data.token);  // Store the token in localStorage
+        navigate("/profile");  // Redirect to the profile page after successful login
       }
     } catch (err) {
       setError("Неверные данные для входа");
     }
   };
+  
 
   return (
     <div>
