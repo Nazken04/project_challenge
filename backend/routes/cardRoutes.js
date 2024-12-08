@@ -8,30 +8,40 @@ const router = express.Router();
 // Создание карточки
 router.post('/', authMiddleware, async (req, res, next) => {
     try {
-      await cardController.createCard(req, res);
+        await cardController.createCard(req, res);
     } catch (err) {
-      next(err);
+        next(err);
     }
-  });
+});
 
-// Получение карточки по ID
-router.get('/:id', authMiddleware, async (req, res, next) => {
+// Создание карточки со статусом "На согласовании"
+// Создание карточки со статусом "На согласовании"
+router.post('/create-on-approval', authMiddleware, async (req, res, next) => {
   try {
-    // Call the controller to get the card by ID
-    await cardController.getCardById(req, res);
+      const cardData = { ...req.body };  // Передаем все данные карточки
+      await cardController.createCardWithFixedStatus(req, res, cardData);  // Вызываем контроллер с фиксированным статусом
   } catch (err) {
-    next(err);
+      next(err);
   }
 });
 
+// Получение карточки по ID
+router.get('/:id', authMiddleware, async (req, res, next) => {
+    try {
+        await cardController.getCardById(req, res);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// Обновление карточки
 // Обновление карточки
 router.put(
   '/:id',
   authMiddleware,
-  roleMiddleware(['Аналитик СД', 'Модератор']), // Restrict access based on roles
+  roleMiddleware(['Сотрудник СУ', 'Аналитик СД', 'Модератор']), // Ограничиваем доступ к ролям
   async (req, res, next) => {
     try {
-      // Call the controller to update the card
       await cardController.updateCard(req, res);
     } catch (err) {
       next(err);
@@ -39,26 +49,68 @@ router.put(
   }
 );
 
+
 // Согласование карточки
 router.post(
-  '/:id/approve',
-  authMiddleware,
-  roleMiddleware(['Аналитик СД', 'Модератор']), // Restrict approval to specific roles
+    '/:id/approve',
+    authMiddleware,
+    roleMiddleware(['Аналитик СД', 'Модератор']), // Restrict approval to specific roles
+    async (req, res, next) => {
+        try {
+            await cardController.approveCard(req, res);
+        } catch (err) {
+            next(err);
+        }
+    }
+);
+
+// Получение списка карточек с фильтрацией
+router.get('/', authMiddleware, async (req, res, next) => {
+  try {
+    await cardController.getCards(req, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+router.get('/check-history/:iin', authMiddleware, async (req, res, next) => {
+  try {
+    await cardController.checkCallHistory(req, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Назначение статуса "Отправлено на доработку"
+// Назначение статуса "Отправлено на доработку"
+router.post(
+  '/:id/send-for-revision',
+  authMiddleware, // Проверка токена и установка req.user
+  roleMiddleware(['Модератор', 'Аналитик СД']), // Проверка роли
   async (req, res, next) => {
     try {
-      // Call the controller to approve the card
-      await cardController.approveCard(req, res);
+      console.log('User from authMiddleware:', req.user); // Логируем req.user для отладки
+      await cardController.markCardForRevision(req, res);
     } catch (err) {
       next(err);
     }
   }
 );
 
-// Получение списка карточек с фильтрацией
-router.get('/', authMiddleware, async (req, res, next) => {
+// Экспорт данных в Excel
+router.get('/export/excel', authMiddleware, async (req, res, next) => {
   try {
-    // Call the controller to get all cards with filtering
-    await cardController.getCards(req, res);
+    await cardController.exportToExcel(req, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Экспорт данных в PDF
+router.get('/export/pdf', authMiddleware, async (req, res, next) => {
+  try {
+    await cardController.exportToPdf(req, res);
   } catch (err) {
     next(err);
   }

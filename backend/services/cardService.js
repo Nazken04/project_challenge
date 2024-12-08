@@ -1,8 +1,14 @@
 const mongoose = require('mongoose');
 const Card = require('../models/cardModel');
 const User = require('../models/userModel');
-const Counter = require('../models/counterModel');  // Assuming there's a counter model to track sequences
+const Counter = require('../models/counterModel');
+const Cases = require('../models/casesModel');
+const IinFio = require('../models/iinfioModel');
+const Work = require('../models/workModel');
+const Position = require('../models/position'); // Подключаем модель для должности
+const Region = require('../models/region');
 
+// Функция для генерации регистрационного номера
 async function generateRegistrationNumber() {
     const counter = await Counter.findOneAndUpdate(
         { _id: 'registrationNumber' },
@@ -18,51 +24,67 @@ async function generateRegistrationNumber() {
     return registrationNumber;
 }
 
+// Функция для автозаполнения данных
+async function fetchAutoPopulatedData(номер_дела, ИИН_вызываемого, ИИН_защитника) {
+  const caseData = await Cases.findOne({ номер_дела }); // Используем номер_дела вместо case_number
+  if (!caseData) {
+      throw new Error(`Не удалось найти данные по делу для номера ${номер_дела}`);
+  }
 
-// Helper function to fetch auto-populated data
-async function fetchAutoPopulatedData(caseNumber, ИИН_вызываемого, ИИН_защитника) {
-  // Simulated logic for fetching additional data (should be replaced by actual DB queries or external API calls)
-  const caseData = {
-    статья: 'Статья УК 123',
-    решение: 'Решение по делу 456',
-    фабула: 'Краткая фабула дела',
-  };
+  const вызываемыйData = await IinFio.findOne({ iin: ИИН_вызываемого });
+  if (!вызываемыйData) {
+      throw new Error(`Не удалось найти данные о вызываемом с ИИН ${ИИН_вызываемого}`);
+  }
 
-  const вызываемыйData = {
-    ФИО_вызываемого: 'Иванов Иван Иванович',
-    должность_вызываемого: 'Директор',
-    место_работы: 'Компания ABC',
-    регион: 'Москва',
-  };
+  const защитникData = await IinFio.findOne({ iin: ИИН_защитника });
+  if (!защитникData) {
+      throw new Error(`Не удалось найти данные о защитнике с ИИН ${ИИН_защитника}`);
+  }
 
-  const защитникData = {
-    ФИО_защитника: 'Петров Петр Петрович',
-  };
+  const workData = await Work.findOne({ iin: ИИН_вызываемого });
+  if (!workData) {
+      throw new Error(`Не удалось найти данные о месте работы для ИИН ${ИИН_вызываемого}`);
+  }
 
   return {
-    ...caseData,
-    ...вызываемыйData,
-    ...защитникData,
+      статья: caseData.статья_ук_казахстана,
+      решение: caseData.решение_по_делу,
+      фабула: caseData.краткая_фабула,
+      ФИО_вызываемого: вызываемыйData.full_name,
+      место_работы: workData.workplace,
+      ФИО_защитника: защитникData.full_name,
   };
 }
 
-// Function to get investigator name from the User model
+
+// Функция для получения имени следователя
 async function getInvestigatorName(userId) {
-  const user = await User.findById(userId);
-  if (!user) {
-    throw new Error('Следователь не найден');
-  }
-  return user.name;
+    if (!userId) {
+        throw new Error('Не передан userId');
+    }
+
+    console.log('Ищем следователя с ID:', userId);  // Отладочная информация
+
+    const user = await User.findById(userId);
+    if (!user) {
+        console.log('Следователь не найден с ID:', userId);  // Отладочная информация
+        throw new Error('Следователь не найден');
+    }
+    return user.name;
 }
 
-// Function to create a new card
-async function createCard(cardData, investigatorName) {
-    const {
+// Функция для создания карточки
+// Функция для создания карточки
+async function createCard(cardData) {
+  const {
       case_number,
       ИИН_вызываемого,
       БИН_ИИН,
+      должность_вызываемого,
+      регион,
       планируемые_следственные_действия,
       дата_и_время_проведения,
+      время_ухода,
       место_проведения,
       статус_по_делу,
       отношение_к_событию,
@@ -71,116 +93,158 @@ async function createCard(cardData, investigatorName) {
       ИИН_защитника,
       обоснование,
       результат,
-    } = cardData;
-  
-    // Validate required fields
-    if (!case_number || case_number.length !== 15) {
-      throw new Error('Номер УД обязателен и должен содержать 15 цифр');
-    }
-    if (!ИИН_вызываемого || ИИН_вызываемого.length !== 12) {
-      throw new Error('ИИН вызываемого обязателен и должен содержать 12 цифр');
-    }
-    if (!БИН_ИИН || БИН_ИИН.length !== 12) {
-      throw new Error('БИН/ИИН обязателен и должен содержать 12 цифр');
-    }
-  
-    // Auto-generate registration number and fetch additional data
-    const registrationNumber = await generateRegistrationNumber();
-    console.log("Generated Registration Number:", registrationNumber);
-    
-    if (!registrationNumber) {
-        throw new Error('Generated registration number is invalid');
-    }
-    
-    const autoFetchedData = await fetchAutoPopulatedData(case_number, ИИН_вызываемого, ИИН_защитника);
+      userId, // ID следователя добавлено сюда
+      status, // Используем status из cardData
+  } = cardData;
 
-    const newCard = new Card({
+  // Проверка обязательных полей
+  if (!case_number || case_number.length !== 15) {
+      throw new Error('Номер УД обязателен и должен содержать 15 цифр');
+  }
+  if (!ИИН_вызываемого || ИИН_вызываемого.length !== 12) {
+      throw new Error('ИИН вызываемого обязателен и должен содержать 12 цифр');
+  }
+  if (!БИН_ИИН || БИН_ИИН.length !== 12) {
+      throw new Error('БИН/ИИН обязателен и должен содержать 12 цифр');
+  }
+
+  // Получаем имя следователя
+  const investigatorName = await getInvestigatorName(userId);
+
+  // Автозаполнение данных
+  const populatedData = await fetchAutoPopulatedData(case_number, ИИН_вызываемого, ИИН_защитника);
+
+  const registrationNumber = await generateRegistrationNumber();
+  const newCard = new Card({
       registration_number: registrationNumber,
       creation_date: new Date(),
       case_number,
       ИИН_вызываемого,
-      ФИО_вызываемого: autoFetchedData.ФИО_вызываемого,
-      должность_вызываемого: autoFetchedData.должность_вызываемого,
+      ФИО_вызываемого: populatedData.ФИО_вызываемого,
+      должность_вызываемого,
+      регион,
       БИН_ИИН,
-      место_работы: autoFetchedData.место_работы,
-      регион: autoFetchedData.регион,
+      место_работы: populatedData.место_работы,
       планируемые_следственные_действия,
       дата_и_время_проведения,
+      время_ухода,
       место_проведения,
-      следователь: investigatorName, // Use the investigator's name here
+      следователь: investigatorName,  // Передаем имя следователя сюда
       статус_по_делу,
       отношение_к_событию,
       виды_следствия,
       относится_ли_к_бизнесу,
       ИИН_защитника,
-      ФИО_защитника: autoFetchedData.ФИО_защитника,
+      ФИО_защитника: populatedData.ФИО_защитника,
       обоснование,
       результат,
-      status: 'В работе', // Default status for new cards
-    });
-  
-    await newCard.save();
-    return newCard;
-}
+      status: status || 'В работе',  // Используем статус из данных, если он передан
+  });
 
-// Fetch card by ID
-async function getCardById(cardId) {
-    const card = await Card.findById(cardId).populate('следователь', 'name email role'); // Populate fields of the investigator
-    if (!card) {
+  await newCard.save();
+  return newCard;
+}
+// Функция для получения карточки по ID
+async function getCardById(cardId, user) {
+  const card = await Card.findById(cardId).populate('следователь', 'name email role');
+  if (!card) {
       throw new Error('Карточка не найдена');
-    }
-    return card;
+  }
+
+  // Проверка роли пользователя
+  if (user.role === 'Аналитик СД') {
+      // Подтягиваем данные из пенсионных отчислений для БИН/ИИН
+      let workData = await Work.findOne({ iin: card.БИН_ИИН });
+
+      // Если данные по ИИН не найдены, ищем по БИН
+      if (!workData) {
+          workData = await Work.findOne({ bin: card.БИН_ИИН });
+      }
+
+      // Если данные все еще не найдены, бросаем ошибку
+      if (!workData) {
+          throw new Error(`Не удалось найти данные о месте работы для БИН/ИИН ${card.БИН_ИИН}`);
+      }
+
+      // Добавляем данные о БИН/ИИН и месте работы в карточку
+      card.БИН_ИИН_пенсионка = card.БИН_ИИН;
+      card.место_работы_пенсионка = workData.workplace;
+  }
+
+  // Если не аналитик, скрываем пенсионные данные
+  if (user.role !== 'Аналитик СД') {
+      card.БИН_ИИН_пенсионка = undefined;
+      card.место_работы_пенсионка = undefined;
+  }
+
+  return card;
 }
 
-// Update card information
+
+
+// Функция для обновления карточки
 async function updateCard(cardId, updatedData) {
-    const card = await Card.findById(cardId);
-    if (!card) {
-      throw new Error('Карточка не найдена');
-    }
-  
-    Object.assign(card, updatedData);
-    await card.save();
-    return card;
+  const card = await Card.findById(cardId);
+  if (!card) {
+    throw new Error('Карточка не найдена');
+  }
+
+  // Обновляем только разрешенные поля
+  Object.keys(updatedData).forEach((key) => {
+    card[key] = updatedData[key];
+  });
+
+  await card.save();
+  return card;
 }
 
-// Approve card functionality
+
+// Функция для утверждения карточки
 async function approveCard(cardId, approvalData) {
     const card = await Card.findById(cardId);
     if (!card) {
-      throw new Error('Карточка не найдена');
+        throw new Error('Карточка не найдена');
     }
-  
-    // Ensure approval_path is an array
+
     if (!Array.isArray(card.approval_path)) {
-      card.approval_path = [];  // Initialize an empty array if not present
+        card.approval_path = [];
     }
-  
-    // Add approval data
+
     card.approval_path.push({
-      position: approvalData.position,
-      name: approvalData.name,
-      approval_status: approvalData.approval_status,
+        position: approvalData.position,
+        name: approvalData.name,
+        approval_status: approvalData.approval_status,
     });
-  
-    // Update the status based on approval
+
     card.status = approvalData.approval_status;
-  
+
     await card.save();
     return card;
 }
 
-// Retrieve all cards with filtering options
+// Функция для получения всех карточек с фильтрами
+// Функция для получения всех карточек с фильтрами
 async function getCards(filters) {
-    const { status, region, case_number } = filters;
-    const query = {};
-  
-    if (status) query.status = status;
-    if (region) query.region = region;
-    if (case_number) query.case_number = case_number;
-  
-    const cards = await Card.find(query).populate('следователь', 'name email role');  // Populate investigator details
-    return cards;
+  const query = { ...filters }; // Получаем переданные фильтры
+
+  const cards = await Card.find(query).populate('следователь', 'name email role');
+  return cards;
+}
+
+
+async function getCallHistoryByIin(iin) {
+  const cards = await Card.find({ ИИН_вызываемого: iin }, 'case_number следователь status creation_date время_ухода');
+  if (!cards || cards.length === 0) {
+    throw new Error(`История вызовов для ИИН ${iin} не найдена`);
+  }
+
+  return cards.map(card => ({
+    case_number: card.case_number,
+    called_by: card.следователь,
+    call_status: card.status,
+    arrival_time: card.creation_date, // Пример: используем дату создания как "время прихода"
+    departure_time: card.время_ухода || null, // Если есть поле, подтягивайте его
+  }));
 }
 
 module.exports = { 
@@ -188,5 +252,6 @@ module.exports = {
     getCardById, 
     updateCard, 
     approveCard, 
-    getCards 
+    getCards,
+    getCallHistoryByIin 
 };
